@@ -1,66 +1,39 @@
-import "@openzeppelin/hardhat-upgrades";
-import { ethers, upgrades } from "hardhat";
-import { sendShieldedTransaction } from "../utils/swisstronik";
+const hre = require("hardhat");
 
 async function main() {
-  const [owner] = await ethers.getSigners();
-  console.log("Deployer:", owner.address);
+  const JAN_1ST_2030 = 1893456010;
+  const ONE_GWEI = 1_000_000_000_000;
 
-  // contract 1
-  const Swisstronik = await ethers.getContractFactory("Swisstronik");
-  const swisstronik = await Swisstronik.deploy();
-  await swisstronik.waitForDeployment();
-  console.log("Contract address 1 deployed to:", swisstronik.target);
+  console.log("Deploying contract...");
+  const contract = await hre.ethers.deployContract("Lock", [JAN_1ST_2030], {
+    value: ONE_GWEI,
+  });
 
-  // proxy admin
-  const ProxyAdmin = await ethers.getContractFactory("ProxyAdmin");
-  const proxyAdmin = await ProxyAdmin.deploy(owner.address);
-  await proxyAdmin.waitForDeployment();
-  console.log("ProxyAdmin address deployed to:", proxyAdmin.target);
+  await contract.waitForDeployment();
+  console.log(`Contract deployed to ${contract.target}`);
 
-  // proxy
-  const TransparentUpgradeableProxy = await ethers.getContractFactory(
-    "TransparentUpgradeableProxy"
-  );
-  const proxy = await TransparentUpgradeableProxy.deploy(
-    swisstronik.target,
-    proxyAdmin.target,
-    Uint8Array.from([])
-  );
+  console.log(`Pausing 5 seconds in order to verify Contract`);
+  await delay();
+  console.log(`Pause finished. Verifying Contract...`);
 
-  console.log(
-    `👉 Deployed proxy contract address: ${proxy.target}`
-  );
-
-  // contract 2
-  const Swisstronik2 = await ethers.getContractFactory("Swisstronik2");
-  const swisstronik2 = await Swisstronik2.deploy();
-  await swisstronik2.waitForDeployment();
-  console.log(`Contract address 2 deployed to: ${swisstronik2.target}`);
-
-  // upgrade
-  const upgrade = await sendShieldedTransaction(
-    owner,
-    proxyAdmin.target,
-    proxyAdmin.interface.encodeFunctionData("upgradeAndCall", [
-      proxy.target,
-      swisstronik2.target,
-      Uint8Array.from([]),
-    ]),
-    0
-  );
-  await upgrade.wait();
-
-  console.log(
-    `👉 Contract implementation replacement transaction URL: https://explorer-evm.testnet.swisstronik.com/tx/${upgrade.hash}`
-  );
-
-  // await run("verify:verify", {
-  //   address: contract.target,
-  //   constructorArguments: [],
-  // });
+  try {
+    await hre.run("verify:verify", {
+      address: contract.target,
+      constructorArguments: [JAN_1ST_2030],
+    });
+    console.log("Contract verified to", hre.config.etherscan.customChains[0].urls.browserURL + "/address/" + contract.target);
+  } catch (err) {
+    console.error("Error veryfing Contract. Reason:", err);
+  }
 }
 
+function delay() {
+  return new Promise((resolve) => setTimeout(resolve, 5 * 1000));
+}
+
+//DEFAULT BY HARDHAT:
+// We recommend this pattern to be able to use async/await everywhere
+// and properly handle errors.
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
